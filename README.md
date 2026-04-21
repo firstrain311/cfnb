@@ -173,6 +173,8 @@ python3 main.py
    - 创建任务，名称 `Cloudflare IP 优选`，勾选“不管用户是否登录都要运行”和“使用最高权限运行”。
    - 触发器：新建 → 开始任务“按预定计划” → 设置“一次”，开始时间为下一个整15分钟时刻；高级设置中勾选“重复任务间隔”，选择“15分钟”，持续时间“无限期”。
    - 操作：新建 → 操作“启动程序”，程序填写 `python.exe` 路径，参数填写 `main.py` 完整路径，起始于填写项目目录。
+   - 在 **“设置”** 选项卡中，将 **“优先级”** 下拉框设为 **“高”**。
+   - 点击确定，输入 Windows 登录密码保存。
 
 #### Linux 手动部署
 
@@ -191,8 +193,7 @@ python3 main.py
    ```
 4. （可选）添加 cron 任务：
    ```bash
-   (crontab -l 2>/dev/null; echo "0,15,30,45 * * * * cd $(pwd) && /usr/bin/python3 $(pwd)/main.py >> $(pwd)/cron.log 2>&1") | crontab -
-   ```
+(crontab -l 2>/dev/null; echo "0,15,30,45 * * * * cd $(pwd) && nice -n -10 /usr/bin/python3 $(pwd)/main.py >> $(pwd)/cron.log 2>&1") | crontab -   ```
 5. 验证：`crontab -l`
 
 </details>

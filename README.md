@@ -252,8 +252,8 @@ python3 main.py
 | 参数 | 类型 | 默认值 | 说明 |
 | :--- | :--- | :--- | :--- |
 | `ENABLE_WXPUSHER` | `boolean` | `true` | 是否启用微信通知 |
-| `WXPUSHER_APP_TOKEN` | `string` | `""` | **【必填】** WxPusher 的 APP_TOKEN |
-| `WXPUSHER_UIDS` | `array` | `[""]` | **【必填】** 接收通知的用户 UID 列表 |
+| `WXPUSHER_APP_TOKEN` | `string` | `"your_app_token_here"` | **【必填】** WxPusher 的 APP_TOKEN |
+| `WXPUSHER_UIDS` | `array` | `["your_uid_here"]` | **【必填】** 接收通知的用户 UID 列表 |
 | `WXPUSHER_API_URL` | `string` | `http://wxpusher.zjiecode.com/api/send/message` | 消息发送 API 地址 |
 | `NOTIFY_TIMEOUT` | `int` | `5` | 微信通知 API 读取超时（秒） |
 | `NOTIFY_CONNECT_TIMEOUT` | `int` | `5` | 微信通知 API 连接超时（秒） |

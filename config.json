@@ -37,10 +37,10 @@
     "ENABLE_WXPUSHER": true,
     "_comment_ENABLE_WXPUSHER": "是否启用 WxPusher 微信通知",
 
-    "WXPUSHER_APP_TOKEN": "",
+    "WXPUSHER_APP_TOKEN": "your_app_token_here",
     "_comment_WXPUSHER_APP_TOKEN": "【请填写你自己的 WxPusher APP_TOKEN】",
 
-    "WXPUSHER_UIDS": [""],
+    "WXPUSHER_UIDS": ["your_uid_here"],
     "_comment_WXPUSHER_UIDS": "【请填写接收通知的用户 UID 列表】",
 
     "WXPUSHER_API_URL": "http://wxpusher.zjiecode.com/api/send/message",

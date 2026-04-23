@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Cloudflare IP 优选工具 (TCP筛选 + IP可用性二次筛选 + curl带宽测速 + 纯净度过滤 + WxPusher通知)
+Cloudflare IP 优选工具 (TCP筛选 + IP可用性二次筛选 + curl带宽测速 + WxPusher通知)
 依赖：requests, curl (系统自带)
 配置文件：同目录下的 config.json（请根据需要修改参数）
 结果保存到 ip.txt，并自动推送到 GitHub，同时批量更新到 Cloudflare DNS
@@ -73,8 +73,9 @@ def load_config():
         "AVAILABILITY_CHECK_API": "https://api.check.proxyip.cmliussss.net/check",
         "AVAILABILITY_TIMEOUT": 5,
         "AVAILABILITY_CONNECT_TIMEOUT": 5,
-        "AVAILABILITY_RETRY_MAX": 2,
+        "AVAILABILITY_RETRY_MAX": 1,
         "AVAILABILITY_RETRY_DELAY": 5,
+        "AVAILABILITY_PROBES": 3,
         "FILTER_IPV6_AVAILABILITY": True,
         "FILTER_BLOCKED_COUNTRIES_ENABLED": True,
         "BLOCKED_COUNTRIES": [
@@ -82,14 +83,6 @@ def load_config():
             "IR", "KP", "LY", "MO", "NG", "NL", "PK", "RU", "SD", "SO",
             "SY", "TH", "TW", "UA", "VE", "VN", "YE", "ZW"
         ],
-        "ENABLE_IP_PURITY_CHECK": False,
-        "IP_PURITY_API": "https://api.ipapi.is/",
-        "IP_PURITY_WORKERS": 5,
-        "IP_PURITY_TIMEOUT": 5,
-        "IP_PURITY_CONNECT_TIMEOUT": 5,
-        "IP_PURITY_RETRY_MAX": 2,
-        "IP_PURITY_RETRY_DELAY": 5,
-        "IP_PURITY_FALLBACK": True,
         "BANDWIDTH_SIZE_MB": 1,
         "BANDWIDTH_TIMEOUT": 5,
         "BANDWIDTH_RETRY_MAX": 2,
@@ -153,17 +146,10 @@ AVAILABILITY_TIMEOUT = cfg["AVAILABILITY_TIMEOUT"]
 AVAILABILITY_CONNECT_TIMEOUT = cfg["AVAILABILITY_CONNECT_TIMEOUT"]
 AVAILABILITY_RETRY_MAX = cfg["AVAILABILITY_RETRY_MAX"]
 AVAILABILITY_RETRY_DELAY = cfg["AVAILABILITY_RETRY_DELAY"]
+AVAILABILITY_PROBES = cfg["AVAILABILITY_PROBES"]
 FILTER_IPV6_AVAILABILITY = cfg["FILTER_IPV6_AVAILABILITY"]
 FILTER_BLOCKED_COUNTRIES_ENABLED = cfg["FILTER_BLOCKED_COUNTRIES_ENABLED"]
 BLOCKED_COUNTRIES = cfg["BLOCKED_COUNTRIES"]
-ENABLE_IP_PURITY_CHECK = cfg["ENABLE_IP_PURITY_CHECK"]
-IP_PURITY_API = cfg["IP_PURITY_API"]
-IP_PURITY_WORKERS = cfg["IP_PURITY_WORKERS"]
-IP_PURITY_TIMEOUT = cfg["IP_PURITY_TIMEOUT"]
-IP_PURITY_CONNECT_TIMEOUT = cfg["IP_PURITY_CONNECT_TIMEOUT"]
-IP_PURITY_RETRY_MAX = cfg["IP_PURITY_RETRY_MAX"]
-IP_PURITY_RETRY_DELAY = cfg["IP_PURITY_RETRY_DELAY"]
-IP_PURITY_FALLBACK = cfg["IP_PURITY_FALLBACK"]
 BANDWIDTH_SIZE_MB = cfg["BANDWIDTH_SIZE_MB"]
 BANDWIDTH_TIMEOUT = cfg["BANDWIDTH_TIMEOUT"]
 BANDWIDTH_RETRY_MAX = cfg["BANDWIDTH_RETRY_MAX"]
@@ -272,7 +258,7 @@ def test_node(node_str):
 
 def check_availability(node_str):
     """
-    检测单个节点是否可用，并返回协议栈信息。
+    检测单个节点是否可用（全部探测必须通过才视为可用）。
     返回 (node_str, is_ok, inferred_stack, exit_info)
     """
     m = re.match(r"^(\d+\.\d+\.\d+\.\d+):(\d+)#", node_str)
@@ -281,25 +267,44 @@ def check_availability(node_str):
     ip, port = m.group(1), m.group(2)
     proxyip = f"{ip}:{port}"
 
+    probes = cfg.get("AVAILABILITY_PROBES", 3)
     best_stack = "unknown"
     best_exit_info = {}
-    success = False
+    success = True  # 先假设成功，遇到失败再置 False
 
-    try:
-        resp = requests.get(
-            AVAILABILITY_CHECK_API,
-            params={"proxyip": proxyip},
-            timeout=(AVAILABILITY_CONNECT_TIMEOUT, AVAILABILITY_TIMEOUT)
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("success") is True:
-                success = True
-                best_stack = data.get("inferred_stack", "unknown")
-                probe = data.get("probe_results", {}).get("ipv6") or data.get("probe_results", {}).get("ipv4") or {}
-                best_exit_info = probe.get("exit", {})
-    except Exception:
-        pass
+    for i in range(probes):
+        probe_ok = False
+        try:
+            resp = requests.get(
+                AVAILABILITY_CHECK_API,
+                params={"proxyip": proxyip},
+                timeout=(AVAILABILITY_CONNECT_TIMEOUT, AVAILABILITY_TIMEOUT)
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("success") is True:
+                    probe_results = data.get("probe_results", {})
+                    v4_ok = probe_results.get("ipv4", {}).get("ok", False)
+                    v6_ok = probe_results.get("ipv6", {}).get("ok", False)
+                    
+                    if v4_ok or v6_ok:
+                        stack = data.get("inferred_stack", "unknown")
+                        if stack != "ipv6_only":
+                            probe_ok = True
+                            # 记录第一次成功的详细信息（用于后续可能的展示）
+                            if i == 0 or best_stack == "unknown":
+                                best_stack = stack
+                                for ver in ("ipv6", "ipv4"):
+                                    probe = probe_results.get(ver, {})
+                                    if probe.get("ok"):
+                                        best_exit_info = probe.get("exit", {})
+                                        break
+        except Exception:
+            pass
+
+        if not probe_ok:
+            success = False
+            break  # 一旦有一次失败，立即淘汰，不再继续探测
 
     return (node_str, success, best_stack, best_exit_info)
 
@@ -411,85 +416,6 @@ def bandwidth_filter(candidates):
     print()
     results.sort(key=lambda x: x[1], reverse=True)
     return results
-
-def check_ip_purity(node_str):
-    m = re.match(r'^(\d+\.\d+\.\d+\.\d+)', node_str)
-    if not m:
-        return (node_str, False, "无法解析IP")
-    ip = m.group(1)
-    url = f"{IP_PURITY_API.rstrip('/')}/?q={ip}"
-
-    try:
-        resp = requests.get(url, timeout=(IP_PURITY_CONNECT_TIMEOUT, IP_PURITY_TIMEOUT))
-        if resp.status_code != 200:
-            return (node_str, False, f"HTTP {resp.status_code}")
-
-        data = resp.json()
-        company_score = data.get("company", {}).get("abuser_score", "")
-        asn_score = data.get("asn", {}).get("abuser_score", "")
-
-        is_clean = ("low" in company_score.lower()) and ("low" in asn_score.lower())
-        return (node_str, is_clean, None)
-
-    except Exception as e:
-        return (node_str, False, str(e))
-
-def purity_filter_bw_results(bw_results):
-    if not bw_results:
-        return [], 0, 0
-
-    nodes = [node for node, _ in bw_results]
-    print(f"\n对 {len(nodes)} 个测速结果节点进行纯净度检测...")
-
-    pure_nodes = []
-    completed = 0
-    total = len(nodes)
-    last_print = time.time()
-
-    with ThreadPoolExecutor(max_workers=IP_PURITY_WORKERS) as executor:
-        future_to_node = {executor.submit(check_ip_purity, node): node for node in nodes}
-        for future in as_completed(future_to_node):
-            completed += 1
-            node, is_clean, _ = future.result()
-            if is_clean:
-                pure_nodes.append(node)
-            now = time.time()
-            if now - last_print >= PROGRESS_PRINT_INTERVAL or completed == total:
-                print(f"\r[纯净度检测] 进度：{completed}/{total} ({(completed/total)*100:.1f}%) 通过数量：{len(pure_nodes)}", end="", flush=True)
-                last_print = now
-    print()
-
-    pure_results = [(node, speed) for node, speed in bw_results if node in pure_nodes]
-    return pure_results, len(pure_results), total
-
-def purity_filter_with_retry(bw_results):
-    if not ENABLE_IP_PURITY_CHECK:
-        return bw_results, True
-
-    if not bw_results:
-        return [], True
-
-    pure_results = []
-    for attempt in range(1, IP_PURITY_RETRY_MAX + 1):
-        print(f"\n[纯净度检测] 第 {attempt} 轮检测...")
-        pure_results, passed, total = purity_filter_bw_results(bw_results)
-        if passed > 0:
-            print(f"✅ 纯净度检测通过 {passed} 个节点")
-            return pure_results, True
-        if attempt < IP_PURITY_RETRY_MAX:
-            print(f"⚠️ 本轮纯净度检测通过率为 0%，等待 {IP_PURITY_RETRY_DELAY} 秒后重试...")
-            time.sleep(IP_PURITY_RETRY_DELAY)
-
-    print(f"❌ 纯净度检测经 {IP_PURITY_RETRY_MAX} 轮重试后仍无节点通过。")
-    send_wxpusher_notification(
-        content=f"纯净度检测经 {IP_PURITY_RETRY_MAX} 轮重试后仍无节点通过。",
-        summary="纯净度检测全部失败"
-    )
-    if IP_PURITY_FALLBACK:
-        print("将降级使用原带宽测速结果。")
-        return bw_results, False
-    else:
-        return [], False
 
 def batch_update_cloudflare_dns(ip_list, ip_info=None, full_bw_results=None, target_count=16, latency_map=None):
     if not cfg.get("CF_ENABLED", False):
@@ -712,11 +638,10 @@ def main():
     mode_str = f"全局最优{GLOBAL_TOP_N}个" if USE_GLOBAL_MODE else f"每个国家最优{PER_COUNTRY_TOP_N}个"
     print(f"当前模式：{mode_str}，每个节点测试 {TCP_PROBES} 次 TCP 连接")
     print(f"最低成功率要求：{MIN_SUCCESS_RATE*100:.0f}%")
-    print(f"IP 可用性二次筛选：{'启用' if TEST_AVAILABILITY else '禁用'}（仅对候选节点）")
+    print(f"IP 可用性二次筛选：{'启用' if TEST_AVAILABILITY else '禁用'}（每个节点独立探测{AVAILABILITY_PROBES}次，全部通过才可用）")
     print(f"IPv6 客户端 IP 过滤（仅作用于DNS更新环节）：{'启用' if FILTER_IPV6_AVAILABILITY else '禁用'}")
     print(f"屏蔽国家过滤（仅作用于DNS更新环节）：{'启用' if FILTER_BLOCKED_COUNTRIES_ENABLED else '禁用'}，屏蔽国家：{', '.join(BLOCKED_COUNTRIES)}")
     print(f"带宽测速候选数：{BANDWIDTH_CANDIDATES}，测速文件大小：{BANDWIDTH_SIZE_MB} MB，超时：{BANDWIDTH_TIMEOUT}s")
-    print(f"纯净度检测（仅作用于DNS更新环节）：{'启用' if ENABLE_IP_PURITY_CHECK else '禁用'}")
     if FILTER_COUNTRIES_ENABLED:
         print(f"国家过滤：启用，允许国家：{', '.join(ALLOWED_COUNTRIES)}")
 
@@ -828,7 +753,7 @@ def main():
             speed_map = {node: speed for node, speed in bw_results}
             final_selected.sort(key=lambda x: speed_map.get(x, 0), reverse=True)
 
-        print("\n================ 最终优选节点（基于带宽测速，未经纯净度过滤）================")
+        print("\n================ 最终优选节点（基于带宽测速）================")
         speed_map = {node: speed for node, speed in bw_results}
         for i, node in enumerate(final_selected, 1):
             speed = speed_map.get(node, 0)
@@ -839,14 +764,6 @@ def main():
                 print(f"{i}. {node} 速度 {speed:.2f} Mbps")
 
         dns_bw_results = bw_results
-        if ENABLE_IP_PURITY_CHECK:
-            print("\n[DNS 更新专属] 开始纯净度过滤...")
-            dns_bw_results, purity_ok = purity_filter_with_retry(bw_results)
-            if not dns_bw_results:
-                msg = "纯净度检测全部失败且配置为不降级，将跳过 DNS 更新。"
-                print(f"⚠️ {msg}")
-                send_wxpusher_notification(content=msg, summary="纯净度检测失败，DNS 更新跳过")
-                dns_bw_results = []
 
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         for node_str in final_selected:

@@ -11,7 +11,7 @@
 
 > ⭐ **如果觉得好用，点个 Star 支持一下～**
 
-这是一个全自动的 **Cloudflare CDN 节点优选工具**。它通过 **TCP 延迟筛选** + **IP 可用性二次检测** + **真实带宽测速** + **IP 纯净度过滤** 四重机制，从海量公开节点中筛选出当前网络环境下速度最快、可用性最高、滥用评分最低的 Cloudflare IP，并支持**自动更新至 Cloudflare DNS** 以及**同步至 GitHub 仓库**，同时支持微信实时通知。
+这是一个全自动的 **Cloudflare CDN 节点优选工具**。它通过 **TCP 延迟筛选** + **IP 可用性二次检测** + **真实带宽测速** 三重机制，从海量公开节点中筛选出当前网络环境下速度最快、可用性最高的 Cloudflare IP，并支持**自动更新至 Cloudflare DNS** 以及**同步至 GitHub 仓库**，同时支持微信实时通知。
 
 > [!IMPORTANT]
 > **跨平台支持**：本工具同时兼容 **Windows** 和 **Linux** 操作系统。
@@ -37,9 +37,8 @@
 | :--- | :--- |
 | 🌐 **多模式筛选** | 全局最优 TopN / 分国家最优 TopN |
 | ⚡ **TCP 连接测试** | 并发测延迟，可设成功率阈值 |
-| 🔍 **可用性二次检测** | API 验证代理能力 |
+| 🔍 **可用性二次检测** | API 验证代理能力 （严格检查 `ok` 字段，排除纯 IPv6 节点） |
 | 📶 **真实带宽测速** | curl 下载测速，实测吞吐量 |
-| 🛡️ **IP 纯净度过滤** | 过滤滥用 IP（**仅作用于 DNS 更新环节**） |
 | 🚫 **屏蔽国家过滤** | DNS 更新时屏蔽指定国家（**仅作用于 DNS 更新环节**） |
 | 🌍 **国家过滤前置** | TCP 测试前即过滤指定国家（减少无效测试） |
 | ☁️ **Cloudflare DNS 更新** | 批量替换同名 A 记录 |
@@ -299,7 +298,7 @@ python3 main.py
 | `OUTPUT_FILE` | `string` | `"ip.txt"` | 最终结果保存文件名 |
 
 <details>
-<summary>🔧 高级参数（可用性 / 带宽 / 纯净度 / 并发 / 重试）</summary>
+<summary>🔧 高级参数（可用性 / 带宽 / 并发 / 重试）</summary>
 
 **可用性检测参数**
 
@@ -309,11 +308,17 @@ python3 main.py
 | `AVAILABILITY_CHECK_API` | `string` | `"https://api.check.proxyip.cmliussss.net/check"` | 可用性检测 API 地址 |
 | `AVAILABILITY_TIMEOUT` | `int` | `5` | 可用性 API 读取超时（秒） |
 | `AVAILABILITY_CONNECT_TIMEOUT` | `int` | `5` | 可用性 API 连接超时（秒） |
-| `AVAILABILITY_RETRY_MAX` | `int` | `2` | 可用性检测最大重试轮数 |
+| `AVAILABILITY_RETRY_MAX` | `int` | `1` | 可用性检测最大重试轮数（因节点内已多次探测，设为 1 即可） |
 | `AVAILABILITY_RETRY_DELAY` | `int` | `5` | 可用性检测重试间隔（秒） |
+| `AVAILABILITY_PROBES` | `int` | `3` | 每个节点独立探测的 API 请求次数，要求**全部通过**才视为可用 |
 | `FILTER_IPV6_AVAILABILITY` | `boolean` | `true` | **仅作用于 DNS**：是否过滤落地仅 IPv6 的节点（`ipv6_only`） |
 
-> 💡 IPv6 过滤逻辑：通过 API 返回的 `inferred_stack` 判断，仅淘汰 `ipv6_only` 节点，保留 `ipv4_only` 和 `dual_stack` 节点。
+> 💡 可用性检测逻辑：  
+> - 每个节点会根据 `AVAILABILITY_PROBES` 进行多次探测（默认 3 次）。  
+> - **每次探测都必须同时满足**：API 返回 `success: true`、IPv4 或 IPv6 探针的 `ok` 字段为 `true`、协议栈不能为 `ipv6_only`。  
+> - 若任何一次探测失败，节点立即淘汰，不再继续。  
+> - `AVAILABILITY_RETRY_MAX` 控制整轮检测失败后的重试次数，默认为 1（不重试）。  
+> - IPv6 过滤在可用性检测阶段已提前拦截 `ipv6_only` 节点，DNS 更新阶段仍有二次兜底。
 
 **带宽测速参数**
 
@@ -326,19 +331,6 @@ python3 main.py
 | `BANDWIDTH_URL_TEMPLATE` | `string` | `"https://speed.cloudflare.com/__down?bytes={bytes}"` | 测速 URL 模板 |
 | `BANDWIDTH_PROCESS_BUFFER` | `int` | `2` | curl 进程额外缓冲时间（秒） |
 | `BANDWIDTH_CONNECT_TIMEOUT` | `int` | `5` | curl 测速连接超时（秒） |
-
-**纯净度检测参数**
-
-| 参数 | 类型 | 默认值 | 说明 |
-| :--- | :--- | :--- | :--- |
-| `ENABLE_IP_PURITY_CHECK` | `boolean` | `false` | **仅作用于 DNS**：是否进行 IP 纯净度检测（要求滥用评分均为 Low） |
-| `IP_PURITY_API` | `string` | `"https://api.ipapi.is/"` | 纯净度检测 API 地址 |
-| `IP_PURITY_WORKERS` | `int` | `5` | 纯净度检测并发数 |
-| `IP_PURITY_TIMEOUT` | `int` | `5` | 纯净度 API 读取超时（秒） |
-| `IP_PURITY_CONNECT_TIMEOUT` | `int` | `5` | 纯净度 API 连接超时（秒） |
-| `IP_PURITY_RETRY_MAX` | `int` | `2` | 纯净度检测最大重试轮数 |
-| `IP_PURITY_RETRY_DELAY` | `int` | `5` | 纯净度检测重试间隔（秒） |
-| `IP_PURITY_FALLBACK` | `boolean` | `true` | 全部失败时是否降级使用原带宽测速结果 |
 
 **并发控制参数**
 
@@ -376,7 +368,7 @@ python3 main.py
 > `162.159.x.x:443#HK`
 
 **重要说明**：  
-- `ip.txt` 中保存的是**基于带宽测速排序、未经纯净度过滤和屏蔽国家过滤的原始结果**，以确保 GitHub 推送的节点列表完整且不丢失任何高速 IP。  
+- `ip.txt` 中保存的是**基于带宽测速排序、未经屏蔽国家过滤的原始结果**，以确保 GitHub 推送的节点列表完整且不丢失任何高速 IP。  
 - Cloudflare DNS 批量更新环节会额外应用 `FILTER_IPV6_AVAILABILITY`（过滤落地 IPv6）和 `BLOCKED_COUNTRIES`（屏蔽特定国家）两项过滤，仅将符合条件的 IP 写入 DNS 记录。
 
 若你已配置 GitHub 自动同步，该文件将自动推送至远程仓库，订阅链接请参考 [配置 GitHub 自动同步](#-配置-github-自动同步) 章节末尾。
@@ -593,7 +585,6 @@ git branch -M $(git remote show origin | grep "HEAD branch" | cut -d " " -f5) 2>
 - **低延迟**：`main.py` 已经通过 TCP 握手筛选出了延迟最低的节点。
 - **高带宽**：结果经过真实 `curl` 下载测试，排在前面的节点具有更强的并发吞吐能力。
 - **高可用**：通过 `AVAILABILITY_CHECK_API` 过滤了那些能 Ping 通但无法正常通过代理请求的无效 IP。
-- **高纯净度**：通过 `ipapi.is` 排除了被标记为滥用的 IP，降低被目标网站屏蔽的风险。
 - **自动更新**：DNS 记录随优选结果自动刷新，无需手动修改配置。
 
 ### 注意事项
@@ -614,13 +605,13 @@ git branch -M $(git remote show origin | grep "HEAD branch" | cut -d " " -f5) 2>
 | :--- | :--- | :--- |
 | TCP 延迟测试 (Socket) | ❌ 直连 | 反映本机到节点的 RTT |
 | 带宽测速 (curl) | ❌ 直连 | 反映本机到 CDN 的速度 |
-| API 请求类 (requests) | ✅ 跟随系统代理 | 获取节点、可用性、纯净度、微信通知等 |
+| API 请求类 (requests) | ✅ 跟随系统代理 | 获取节点、可用性、微信通知等 |
 | Git 推送 (git) | ✅ 跟随系统代理 | 涉及 `github.com` 等 |
 
 > 各阶段对应域名见上方“涉及域名”列表。
 
 **涉及域名：**  
-`cm.edu.kg` · `cmliussss.net` · `090227.xyz` · `cloudflare.com` · `zjiecode.com` · `github.com` · `githubusercontent.com` · `ipapi.is`
+`cm.edu.kg` · `cmliussss.net` · `090227.xyz` · `cloudflare.com` · `zjiecode.com` · `github.com` · `githubusercontent.com`
 
 **建议：**  
 1. 检查本机能否直连上述域名 → 能通设 `DIRECT`，不通设 `PROXY`  
@@ -671,8 +662,8 @@ git branch -M $(git remote show origin | grep "HEAD branch" | cut -d " " -f5) 2>
 <details>
 <summary>🔍 检测与过滤</summary>
 
-8. **可用性检测或纯净度检测全部失败**  
-   若 API 接口异常，程序会自动跳过此步骤并回退到 TCP 筛选结果，同时发送微信提醒（如已配置）。纯净度检测还可通过 `IP_PURITY_FALLBACK` 控制是否降级。
+8. **可用性检测全部失败**  
+   若 API 接口异常，程序会自动跳过此步骤并回退到 TCP 筛选结果，同时发送微信提醒（如已配置）。
 
 </details>
 
@@ -690,7 +681,6 @@ git branch -M $(git remote show origin | grep "HEAD branch" | cut -d " " -f5) 2>
 
 - 节点数据源 & 检测 API：[cmliussss](https://github.com/cmliussss)
 - 微信通知服务：[WxPusher](https://wxpusher.zjiecode.com/)
-- IP 纯净度检测：[ipapi.is](https://ipapi.is/)
 
 ---
 

@@ -145,6 +145,8 @@ def load_config():
         "FETCH_TIMEOUT": 3,
         "FETCH_CONNECT_TIMEOUT": 3,
         "OUTPUT_FILE": "ip.txt",
+        "ENABLE_LOGGING": False,
+        "LOG_FILE": "cfnb.log",
         "TEST_AVAILABILITY": True,
         "AVAILABILITY_CHECK_API": "https://api.090227.xyz/check",
         "AVAILABILITY_TIMEOUT": 3,
@@ -217,6 +219,8 @@ FETCH_RETRY_DELAY = cfg["FETCH_RETRY_DELAY"]
 FETCH_TIMEOUT = cfg["FETCH_TIMEOUT"]
 FETCH_CONNECT_TIMEOUT = cfg["FETCH_CONNECT_TIMEOUT"]
 OUTPUT_FILE = cfg["OUTPUT_FILE"]
+ENABLE_LOGGING = cfg["ENABLE_LOGGING"]
+LOG_FILE = cfg["LOG_FILE"]
 TEST_AVAILABILITY = cfg["TEST_AVAILABILITY"]
 AVAILABILITY_CHECK_API = cfg["AVAILABILITY_CHECK_API"]
 AVAILABILITY_TIMEOUT = cfg["AVAILABILITY_TIMEOUT"]
@@ -1021,4 +1025,42 @@ def main():
     sync_to_github()
 
 if __name__ == "__main__":
+    import atexit
+
+    # 读取配置
+    enable_log = cfg.get("ENABLE_LOGGING", False)
+    log_filename = cfg.get("LOG_FILE", "cfnb.log")
+
+    if enable_log:
+        try:
+            # 使用绝对路径，确保写入脚本所在目录
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            log_path = os.path.join(script_dir, log_filename)
+            log_f = open(log_path, "w", encoding="utf-8")
+            print("✅ 日志已启用，输出将保存到 " + log_path)
+        except Exception as e:
+            print(f"❌ 无法打开日志文件 {log_path}: {e}")
+            log_f = None
+        else:
+            class _Tee:
+                def __init__(self, *files):
+                    self.files = files
+                def write(self, obj):
+                    for f in self.files:
+                        f.write(obj)
+                        f.flush()
+                def flush(self):
+                    for f in self.files:
+                        f.flush()
+            sys.stdout = _Tee(sys.stdout, log_f)
+
+            # 确保退出时关闭日志文件
+            def _close_log():
+                try:
+                    sys.stdout = sys.__stdout__
+                    log_f.close()
+                except Exception:
+                    pass
+            atexit.register(_close_log)
+
     main()

@@ -329,6 +329,8 @@ python3 main.py
 | `FETCH_TIMEOUT` | `int` | `3` | 获取节点列表读取超时（秒） |
 | `FETCH_CONNECT_TIMEOUT` | `int` | `3` | 获取节点列表连接超时（秒） |
 | `OUTPUT_FILE` | `string` | `"ip.txt"` | 最终结果保存文件名 |
+| `ENABLE_LOGGING` | `boolean` | `false` | 是否启用运行日志（每次运行覆盖 LOG_FILE） |
+| `LOG_FILE` | `string` | `"cfn.log"` | 运行日志文件名（仅在启用日志时生效） |
 
 <details>
 <summary>🔧 高级参数（可用性 / 带宽 / 并发 / 重试）</summary>

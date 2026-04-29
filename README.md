@@ -106,11 +106,11 @@
 
 | GitHub Personal Access Token | Cloudflare API Token | WxPusher 微信通知 |
 | :---: | :---: | :---: |
-| **1.** 登录 GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) | **1.** 登录 Cloudflare → My Profile → API Tokens → Create Token → Create Custom Token | **1.** 访问 [WxPusher 后台](http://wxpusher.zjiecode.com/admin/)，微信扫码登录 |
-| **2.** Generate new token (classic)，Note 任意填 | **2.** Token name 任意；Permissions: `Zone` → `DNS` → `Edit`；Zone Resources: 选择你的域名 | **2.** 左侧菜单“应用管理”→“应用信息”→“新增应用”，填写名称后创建 |
-| **3.** **Expiration 必须选 `No expiration`** | **3.** 点击 Continue to summary → Create Token | **3.** 复制保存 **AppToken**（仅显示一次） |
-| **4.** Select scopes: 仅勾选 **repo**（自动勾全） | **4.** **保存 Token** | **4.** 左侧“关注应用”→微信扫码关注公众号 |
-| **5.** Generate token，**保存** | **5.** Zone ID 在域名概览页右侧“API”栏目复制 | **5.** 公众号菜单“我的”→“我的UID”获取 UID |
+| **1.** 登录 GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic) | **1.** 进入域名概览页，点击右侧 **API** 栏的 **获取您的 API 令牌** | **1.** 访问 [WxPusher 后台](http://wxpusher.zjiecode.com/admin/)，微信扫码登录 |
+| **2.** Generate new token (classic)，Note 任意填 | **2.** 点击 **创建令牌** → 选择 **编辑区域 DNS** 模板 | **2.** 左侧菜单“应用管理”→“应用信息”→“新增应用”，填写名称后创建 |
+| **3.** **Expiration 必须选 `No expiration`** | **3.** 权限已自动填好（区域 - DNS - 编辑），**区域资源**选择你的域名 | **3.** 复制保存 **AppToken**（仅显示一次） |
+| **4.** Select scopes: 仅勾选 **repo**（自动勾全） | **4.** 点击 **继续以显示摘要** → **创建令牌** | **4.** 左侧“关注应用”→微信扫码关注公众号 |
+| **5.** Generate token，**保存** | **5.** 立即复制并保存令牌（仅显示一次） | **5.** 公众号菜单“我的”→“我的UID”获取 UID |
 | 填入 `git_sync.ps1` / `git_sync.sh` 的 `github_token` | 填入 `config.json` 的 `CF_API_TOKEN` 和 `CF_ZONE_ID` | 填入 `config.json` 的 `WXPUSHER_APP_TOKEN` 和 `WXPUSHER_UIDS` |
 
 > 💡 若不需要某项功能，可跳过对应步骤或在配置中关闭开关：  
